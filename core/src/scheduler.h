@@ -38,11 +38,11 @@ public:
 
     bool init_server_context(const std::vector<std::string>& args);
     void handle_completions(const Request & req, Response & res);
-    void handle_completions_impl(server_task_type type,std::string model,json & data,const std::vector<raw_buffer> & files,const std::function<bool()> & is_connection_closed,Response & res,oaicompat_type oaicompat);
+    void handle_completions_impl(server_task_type type,std::string model,json & data,const std::vector<raw_buffer> & files,const std::function<bool()> & is_connection_closed,Response & res,task_response_type res_type);
     void handle_completions_oai(const Request & req, Response & res);
     void handle_chat_completions(const Request & req, Response & res);
 
-    void handle_embeddings_impl(const Request & req, Response & res, oaicompat_type oaicompat);
+    void handle_embeddings_impl(const Request & req, Response & res, task_response_type res_type);
     void handle_embeddings(const Request & req, Response & res);
     void handle_embeddings_oai(const Request & req, Response & res);
     void res_error(Response & res, const json & error_data);

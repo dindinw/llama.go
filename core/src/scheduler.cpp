@@ -32,6 +32,7 @@ bool Scheduler::stop() {
     if (tasks_thread.joinable()) {
         tasks_thread.join();
     }
+    llama_memory_breakdown_print(ctx_server.ctx);
     return true;
 }
 
@@ -56,6 +57,18 @@ bool Scheduler::init_server_context(const std::vector<std::string>& args) {
         std::filesystem::path fp(params.model.path);
         params.model_alias=fp.stem().string();
     }
+
+    // TODO: should we have a separate n_parallel parameter for the server?
+    //       https://github.com/ggml-org/llama.cpp/pull/16736#discussion_r2483763177
+    // TODO: this is a common configuration that is suitable for most local use cases
+    //       however, overriding the parameters is a bit confusing - figure out something more intuitive
+    if (params.n_parallel == 1 && params.kv_unified == false && !params.has_speculative()) {
+        LOG_WRN("%s: setting n_parallel = 4 and kv_unified = true (add -kvu to disable this)\n", __func__);
+
+        params.n_parallel = 4;
+        params.kv_unified = true;
+    }
+
 
     if (ctx_servers.empty()) {
         llama_numa_init(params.numa);
@@ -148,11 +161,15 @@ void Scheduler::handle_completions_impl(
         const std::vector<raw_buffer> & files,
         const std::function<bool()> & is_connection_closed,
         Response & res,
-        oaicompat_type oaicompat) {
+        task_response_type res_type) {
     GGML_ASSERT(type == SERVER_TASK_TYPE_COMPLETION || type == SERVER_TASK_TYPE_INFILL);
 
     auto completion_id = gen_chatcmplid();
-    std::unordered_set<int> task_ids;
+    // need to store the reader as a pointer, so that it won't be destroyed when the handle returns
+    // use shared_ptr as it's shared between the chunked_content_provider() and on_complete()
+    const auto rd = std::make_shared<server_response_reader>(ctx_server);
+
+
     try {
         std::vector<server_task> tasks;
 
@@ -163,7 +180,7 @@ void Scheduler::handle_completions_impl(
         // process prompt
         std::vector<server_tokens> inputs;
 
-        if (oaicompat && ctx_server.mctx != nullptr) {
+        if (res_type != TASK_RESPONSE_TYPE_NONE && ctx_server.mctx != nullptr) {
             // This is the case used by OAI compatible chat path with MTMD. TODO It can be moved to the path below.
             inputs.push_back(process_mtmd_prompt(ctx_server.mctx, prompt.get<std::string>(), files));
         } else {
@@ -171,17 +188,8 @@ void Scheduler::handle_completions_impl(
             inputs = tokenize_input_prompts(ctx_server.vocab, ctx_server.mctx, prompt, true, true);
         }
 
-        const size_t n_ctx_slot = ctx_server.n_ctx / ctx_server.params_base.n_parallel;
         tasks.reserve(inputs.size());
         for (size_t i = 0; i < inputs.size(); i++) {
-            auto n_prompt_tokens = inputs[i].size();
-            if (n_prompt_tokens >= n_ctx_slot) {
-                json error_data = format_error_response("the request exceeds the available context size, try increasing it", ERROR_TYPE_EXCEED_CONTEXT_SIZE);
-                error_data["n_prompt_tokens"] = n_prompt_tokens;
-                error_data["n_ctx"] = n_ctx_slot;
-                res_error(res, error_data);
-                return;
-            }
             server_task task = server_task(type);
 
             task.id    = ctx_server.queue_tasks.get_new_id();
@@ -195,16 +203,14 @@ void Scheduler::handle_completions_impl(
             task.id_slot = json_value(data, "id_slot", -1);
 
             // OAI-compat
-            task.params.oaicompat                 = oaicompat;
+            task.params.res_type          = res_type;
             task.params.oaicompat_cmpl_id         = completion_id;
             // oaicompat_model is already populated by params_from_json_cmpl
 
             tasks.push_back(std::move(task));
         }
 
-        task_ids = server_task::get_list_id(tasks);
-        ctx_server.queue_results.add_waiting_tasks(tasks);
-        ctx_server.queue_tasks.post(std::move(tasks));
+        rd->post_tasks(std::move(tasks));
     } catch (const std::exception & e) {
         res_error(res, format_error_response(e.what(), ERROR_TYPE_INVALID_REQUEST));
         return;
@@ -270,7 +276,6 @@ void Scheduler::handle_completions_impl(
     }
 }
 
-
 void Scheduler::handle_completions_oai(const Request & req, Response & res) {
     json data = oaicompat_completion_params_parse(json::parse(req.body));
     std::vector<raw_buffer> files; // dummy
@@ -281,7 +286,7 @@ void Scheduler::handle_completions_oai(const Request & req, Response & res) {
             files,
             req.is_connection_closed,
             res,
-            OAICOMPAT_TYPE_COMPLETION);
+            TASK_RESPONSE_TYPE_OAI_CMPL);
 }
 
 void Scheduler::handle_chat_completions(const Request & req, Response & res) {
@@ -301,16 +306,16 @@ void Scheduler::handle_chat_completions(const Request & req, Response & res) {
             files,
             req.is_connection_closed,
             res,
-            OAICOMPAT_TYPE_CHAT);
+            TASK_RESPONSE_TYPE_OAI_CHAT);
 }
 
-void Scheduler::handle_embeddings_impl(const Request & req, Response & res, oaicompat_type oaicompat) {
+void Scheduler::handle_embeddings_impl(const Request & req, Response & res, task_response_type res_type) {
     if (!ctx_server.params_base.embedding) {
         res_error(res, format_error_response("This server does not support embeddings. Start it with `--embeddings`", ERROR_TYPE_NOT_SUPPORTED));
         return;
     }
 
-    if (oaicompat != OAICOMPAT_TYPE_NONE && llama_pooling_type(ctx_server.ctx) == LLAMA_POOLING_TYPE_NONE) {
+    if (res_type != TASK_RESPONSE_TYPE_NONE && llama_pooling_type(ctx_server.ctx) == LLAMA_POOLING_TYPE_NONE) {
         res_error(res, format_error_response("Pooling type 'none' is not OAI compatible. Please use a different pooling type", ERROR_TYPE_INVALID_REQUEST));
         return;
     }
@@ -322,7 +327,7 @@ void Scheduler::handle_embeddings_impl(const Request & req, Response & res, oaic
     if (body.count("input") != 0) {
         prompt = body.at("input");
     } else if (body.contains("content")) {
-        oaicompat = OAICOMPAT_TYPE_NONE; // "content" field is not OAI compatible
+        res_type = TASK_RESPONSE_TYPE_NONE;// "content" field is not OAI compatible
         prompt = body.at("content");
     } else {
         res_error(res, format_error_response("\"input\" or \"content\" must be provided", ERROR_TYPE_INVALID_REQUEST));
@@ -371,7 +376,7 @@ void Scheduler::handle_embeddings_impl(const Request & req, Response & res, oaic
             task.tokens = std::move(tokenized_prompts[i]);
 
             // OAI-compat
-            task.params.oaicompat = oaicompat;
+            task.params.res_type = res_type;
             task.params.embd_normalize = embd_normalize;
 
             tasks.push_back(std::move(task));
@@ -400,18 +405,18 @@ void Scheduler::handle_embeddings_impl(const Request & req, Response & res, oaic
     }
 
     // write JSON response
-    json root = oaicompat == OAICOMPAT_TYPE_EMBEDDING
+    json root = res_type == TASK_RESPONSE_TYPE_OAI_EMBD
                 ? format_embeddings_response_oaicompat(body, responses, use_base64)
                 : json(responses);
     res_ok(res, root);
 }
 
 void Scheduler::handle_embeddings(const Request & req, Response & res) {
-    handle_embeddings_impl(req, res, OAICOMPAT_TYPE_NONE);
+    handle_embeddings_impl(req, res, TASK_RESPONSE_TYPE_NONE);
 }
 
 void Scheduler::handle_embeddings_oai(const Request & req, Response & res) {
-    handle_embeddings_impl(req, res, OAICOMPAT_TYPE_EMBEDDING);
+    handle_embeddings_impl(req, res, TASK_RESPONSE_TYPE_OAI_EMBD);
 }
 
 void Scheduler::res_error(Response & res, const json & error_data) {
@@ -443,6 +448,7 @@ std::string Scheduler::get_props() {
     json data = {
             { "default_generation_settings", default_generation_settings_for_props },
             { "total_slots",                 ctx_server.params_base.n_parallel },
+            { "model_alias",                 ctx_server.params_base.model_alias },
             { "model_path",                  ctx_server.params_base.model.path },
             { "modalities",                  json {
                     {"vision", ctx_server.oai_parser_opt.allow_image},

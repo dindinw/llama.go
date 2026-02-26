@@ -784,6 +784,222 @@ static json oaicompat_chat_params_parse(
     return llama_params;
 }
 
+json convert_anthropic_to_oai(const json & body) {
+    json oai_body;
+
+    // Convert system prompt
+    json oai_messages = json::array();
+    auto system_param = json_value(body, "system", json());
+    if (!system_param.is_null()) {
+        std::string system_content;
+
+        if (system_param.is_string()) {
+            system_content = system_param.get<std::string>();
+        } else if (system_param.is_array()) {
+            for (const auto & block : system_param) {
+                if (json_value(block, "type", std::string()) == "text") {
+                    system_content += json_value(block, "text", std::string());
+                }
+            }
+        }
+
+        oai_messages.push_back({
+                                       {"role", "system"},
+                                       {"content", system_content}
+                               });
+    }
+
+    // Convert messages
+    if (!body.contains("messages")) {
+        throw std::runtime_error("'messages' is required");
+    }
+    const json & messages = body.at("messages");
+    if (messages.is_array()) {
+        for (const auto & msg : messages) {
+            std::string role = json_value(msg, "role", std::string());
+
+            if (!msg.contains("content")) {
+                if (role == "assistant") {
+                    continue;
+                }
+                oai_messages.push_back(msg);
+                continue;
+            }
+
+            const json & content = msg.at("content");
+
+            if (content.is_string()) {
+                oai_messages.push_back(msg);
+                continue;
+            }
+
+            if (!content.is_array()) {
+                oai_messages.push_back(msg);
+                continue;
+            }
+
+            json tool_calls = json::array();
+            json converted_content = json::array();
+            json tool_results = json::array();
+            bool has_tool_calls = false;
+
+            for (const auto & block : content) {
+                std::string type = json_value(block, "type", std::string());
+
+                if (type == "text") {
+                    converted_content.push_back(block);
+                } else if (type == "image") {
+                    json source = json_value(block, "source", json::object());
+                    std::string source_type = json_value(source, "type", std::string());
+
+                    if (source_type == "base64") {
+                        std::string media_type = json_value(source, "media_type", std::string("image/jpeg"));
+                        std::string data = json_value(source, "data", std::string());
+                        std::ostringstream ss;
+                        ss << "data:" << media_type << ";base64," << data;
+
+                        converted_content.push_back({
+                                                            {"type", "image_url"},
+                                                            {"image_url", {
+                                                                             {"url", ss.str()}
+                                                                     }}
+                                                    });
+                    } else if (source_type == "url") {
+                        std::string url = json_value(source, "url", std::string());
+                        converted_content.push_back({
+                                                            {"type", "image_url"},
+                                                            {"image_url", {
+                                                                             {"url", url}
+                                                                     }}
+                                                    });
+                    }
+                } else if (type == "tool_use") {
+                    tool_calls.push_back({
+                                                 {"id", json_value(block, "id", std::string())},
+                                                 {"type", "function"},
+                                                 {"function", {
+                                                                {"name", json_value(block, "name", std::string())},
+                                                                {"arguments", json_value(block, "input", json::object()).dump()}
+                                                        }}
+                                         });
+                    has_tool_calls = true;
+                } else if (type == "tool_result") {
+                    std::string tool_use_id = json_value(block, "tool_use_id", std::string());
+
+                    auto result_content = json_value(block, "content", json());
+                    std::string result_text;
+                    if (result_content.is_string()) {
+                        result_text = result_content.get<std::string>();
+                    } else if (result_content.is_array()) {
+                        for (const auto & c : result_content) {
+                            if (json_value(c, "type", std::string()) == "text") {
+                                result_text += json_value(c, "text", std::string());
+                            }
+                        }
+                    }
+
+                    tool_results.push_back({
+                                                   {"role", "tool"},
+                                                   {"tool_call_id", tool_use_id},
+                                                   {"content", result_text}
+                                           });
+                }
+            }
+
+            if (!converted_content.empty() || has_tool_calls) {
+                json new_msg = {{"role", role}};
+                if (!converted_content.empty()) {
+                    new_msg["content"] = converted_content;
+                } else if (has_tool_calls) {
+                    new_msg["content"] = "";
+                }
+                if (!tool_calls.empty()) {
+                    new_msg["tool_calls"] = tool_calls;
+                }
+                oai_messages.push_back(new_msg);
+            }
+
+            for (const auto & tool_msg : tool_results) {
+                oai_messages.push_back(tool_msg);
+            }
+        }
+    }
+
+    oai_body["messages"] = oai_messages;
+
+    // Convert tools
+    if (body.contains("tools")) {
+        const json & tools = body.at("tools");
+        if (tools.is_array()) {
+            json oai_tools = json::array();
+            for (const auto & tool : tools) {
+                oai_tools.push_back({
+                                            {"type", "function"},
+                                            {"function", {
+                                                             {"name", json_value(tool, "name", std::string())},
+                                                             {"description", json_value(tool, "description", std::string())},
+                                                             {"parameters", tool.contains("input_schema") ? tool.at("input_schema") : json::object()}
+                                                     }}
+                                    });
+            }
+            oai_body["tools"] = oai_tools;
+        }
+    }
+
+    // Convert tool_choice
+    if (body.contains("tool_choice")) {
+        const json & tc = body.at("tool_choice");
+        if (tc.is_object()) {
+            std::string type = json_value(tc, "type", std::string());
+            if (type == "auto") {
+                oai_body["tool_choice"] = "auto";
+            } else if (type == "any" || type == "tool") {
+                oai_body["tool_choice"] = "required";
+            }
+        }
+    }
+
+    // Convert stop_sequences to stop
+    if (body.contains("stop_sequences")) {
+        oai_body["stop"] = body.at("stop_sequences");
+    }
+
+    // Handle max_tokens (required in Anthropic, but we're permissive)
+    if (body.contains("max_tokens")) {
+        oai_body["max_tokens"] = body.at("max_tokens");
+    } else {
+        oai_body["max_tokens"] = 4096;
+    }
+
+    // Pass through common params
+    for (const auto & key : {"temperature", "top_p", "top_k", "stream"}) {
+        if (body.contains(key)) {
+            oai_body[key] = body.at(key);
+        }
+    }
+
+    // Handle Anthropic-specific thinking param
+    if (body.contains("thinking")) {
+        json thinking = json_value(body, "thinking", json::object());
+        std::string thinking_type = json_value(thinking, "type", std::string());
+        if (thinking_type == "enabled") {
+            int budget_tokens = json_value(thinking, "budget_tokens", 10000);
+            oai_body["thinking_budget_tokens"] = budget_tokens;
+        }
+    }
+
+    // Handle Anthropic-specific metadata param
+    if (body.contains("metadata")) {
+        json metadata = json_value(body, "metadata", json::object());
+        std::string user_id = json_value(metadata, "user_id", std::string());
+        if (!user_id.empty()) {
+            oai_body["__metadata_user_id"] = user_id;
+        }
+    }
+
+    return oai_body;
+}
+
 static json format_embeddings_response_oaicompat(const json & request, const json & embeddings, bool use_base64 = false) {
     json data = json::array();
     int32_t n_tokens = 0;
@@ -1061,19 +1277,22 @@ struct server_tokens {
 
 private: // disallow accessing these members directly, risking out-of-sync
 
-    // map a **start** position in tokens to the image chunk
-    std::unordered_map<llama_pos, mtmd::input_chunk_ptr> map_pos_to_media;
+    // map a **start** index in tokens to the image chunk
+    // note: the order need to be in-sync with tokens
+    std::map<size_t, mtmd::input_chunk_ptr> map_idx_to_media;
 
     // list of tokens
-    // it can include LLAMA_TOKEN_NULL, which is used to indicate a token that is not a text token
-    // a mtmd_input_chunk can occupy multiple tokens, one llama_token per **position**
-    // important: for models using mrope, an image can contain multiple tokens but will use only one **position**
+    //   if the token is LLAMA_TOKEN_NULL, it indicates that this position is occupied by media chunk
+    //   otherwise, it is a normal text token
+    // note: a non-text chunk can occupy multiple tokens (aka memory cells) in the token list
+    // note(2): for M-RoPE, an image can occupy different number of pos; do not assume 1-to-1 mapping tokens <-> pos
     llama_tokens tokens;
 
-    // for ex. with input of 5 text tokens and 2 images:
-    //      [0] [1] [2] [3] [4] [img0] [img0] [img0] [img1] [img1]
-    // pos  0   1   2   3   4   5      6      7      8      9
-    // map_pos_to_media will contain: {5, img0}, {8, img1}
+    // for ex. with input of 5 text tokens and 2 images (each image occupies 3 tokens and 2 pos):
+    //      [0] [1] [2] [3] [4] [img0] [img0] [img0] [img1] [img1] [img1]
+    // idx  0   1   2   3   4   5      6      7      8      9      10
+    // pos  0   1   2   3   4   5      5      5      7      7      7
+    // map_idx_to_media will contain: {5, img0}, {8, img1}
 
 public:
     server_tokens() = default;
@@ -1098,13 +1317,31 @@ public:
         }
     }
 
-    server_tokens(const llama_tokens & tokens, bool has_mtmd) : has_mtmd(has_mtmd), tokens(tokens) {}
+    server_tokens(const llama_tokens & tokens, bool has_mtmd) : has_mtmd(has_mtmd), tokens(tokens) {
+    }
+
+    llama_pos pos_next() const {
+        if (!has_mtmd) {
+            return tokens.size();
+        }
+
+        llama_pos res = tokens.size();
+
+        for (auto it = map_idx_to_media.begin(); it != map_idx_to_media.end(); ++it) {
+            const auto & chunk = it->second;
+            res += mtmd_input_chunk_get_n_pos(chunk.get()) - mtmd_input_chunk_get_n_tokens(chunk.get());
+        }
+
+        return res;
+    }
 
     // for debugging
     std::string str() const {
         std::ostringstream oss;
         oss << "tokens: ";
-        for (const auto & t : tokens) {
+        for (size_t idx = 0; idx < tokens.size(); ++idx) {
+            llama_token t = tokens[idx];
+            oss << "idx:" << idx << " ";
             if (t == LLAMA_TOKEN_NULL) {
                 oss << "<embd> ";
             } else {
@@ -1112,16 +1349,16 @@ public:
             }
         }
         oss << "\n";
-        oss << "image pos: ";
-        for (const auto & it : map_pos_to_media) {
+        oss << "image idx: ";
+        for (const auto & it : map_idx_to_media) {
             oss << it.first << ", ";
         }
         return oss.str();
     }
 
-    const mtmd::input_chunk_ptr & find_chunk(llama_pos pos) const {
-        auto it = map_pos_to_media.find(pos);
-        if (it != map_pos_to_media.end()) {
+    const mtmd::input_chunk_ptr & find_chunk(size_t idx) const {
+        auto it = map_idx_to_media.find(idx);
+        if (it != map_idx_to_media.end()) {
             return it->second;
         }
         throw std::runtime_error("Chunk not found");
@@ -1139,13 +1376,13 @@ public:
         auto type = mtmd_input_chunk_get_type(chunk);
         if (type == MTMD_INPUT_CHUNK_TYPE_IMAGE || type == MTMD_INPUT_CHUNK_TYPE_AUDIO) {
             GGML_ASSERT(has_mtmd);
-            const int n_pos = mtmd_input_chunk_get_n_pos(chunk);
-            llama_pos start_pos = tokens.size();
-            for (int i = 0; i < n_pos; ++i) {
+            const size_t n_tokens = mtmd_input_chunk_get_n_tokens(chunk);
+            size_t start_idx = tokens.size();
+            for (size_t i = 0; i < n_tokens; ++i) {
                 tokens.emplace_back(LLAMA_TOKEN_NULL);
             }
             mtmd::input_chunk_ptr new_chunk(mtmd_input_chunk_copy(chunk));
-            map_pos_to_media[start_pos] = std::move(new_chunk);
+            map_idx_to_media[start_idx] = std::move(new_chunk);
         } else if (type == MTMD_INPUT_CHUNK_TYPE_TEXT) {
             size_t n_tokens;
             const auto * text_tokens = mtmd_input_chunk_get_tokens_text(chunk, &n_tokens);
@@ -1159,7 +1396,7 @@ public:
 
     // appends server tokens, updates the media map. copies media chunks.
     void push_back(server_tokens & tokens) {
-        size_t start_pos = size();
+        size_t start_idx = size();
         for (size_t i = 0; i < tokens.size(); i++) {
             push_back(tokens[i]);
         }
@@ -1167,10 +1404,10 @@ public:
             // Assert if we are copying MTMD chunks to a server_tokens that does not have mtmd.
             // We could also just check, but this will prevent silently dropping MTMD data.
             GGML_ASSERT(has_mtmd);
-            for (auto it = tokens.map_pos_to_media.begin(); it != tokens.map_pos_to_media.end(); ) {
-                auto * chunk = tokens.map_pos_to_media[it->first].get();
+            for (auto it = tokens.map_idx_to_media.begin(); it != tokens.map_idx_to_media.end(); ) {
+                auto * chunk = tokens.map_idx_to_media[it->first].get();
                 mtmd::input_chunk_ptr new_chunk(mtmd_input_chunk_copy(chunk));
-                map_pos_to_media[start_pos+it->first] = std::move(new_chunk);
+                map_idx_to_media[start_idx + it->first] = std::move(new_chunk);
             }
         }
     }
@@ -1202,6 +1439,7 @@ public:
     }
 
     void clear() {
+        map_idx_to_media.clear();
         tokens.clear();
     }
 
@@ -1218,17 +1456,18 @@ public:
             // allowed to resize      ^                    ^
             // disallowed to resize          ^      ^             ^
             if (n > 0) {
-                llama_token last_token = tokens[n - 1];
                 // make sure we never remove tokens in the middle of an image
-                if (last_token == LLAMA_TOKEN_NULL) {
+                // note that the case where we keep a full image at the end is allowed:
+                //   tokens[n - 1] == LLAMA_TOKEN_NULL && tokens[n] != LLAMA_TOKEN_NULL
+                if (tokens[n - 1] == LLAMA_TOKEN_NULL && tokens[n] == LLAMA_TOKEN_NULL) {
                     find_chunk(n - 1); // will throw an error if the token is not begin-of-chunk
                 }
             }
             // remove all image chunks that are not used anymore
-            for (auto it = map_pos_to_media.begin(); it != map_pos_to_media.end(); ) {
-                llama_pos pos = it->first;
-                if (pos >= (llama_pos)n) {
-                    it = map_pos_to_media.erase(it);
+            for (auto it = map_idx_to_media.begin(); it != map_idx_to_media.end(); ) {
+                size_t idx = it->first;
+                if (idx >= n) {
+                    it = map_idx_to_media.erase(it);
                 } else {
                     ++it;
                 }
@@ -1276,12 +1515,12 @@ public:
                 const std::string id_ai = mtmd_input_chunk_get_id(a_chunk.get());
                 const std::string id_bi = mtmd_input_chunk_get_id(b_chunk.get());
 
-                const size_t pos_a = mtmd_input_chunk_get_n_pos(a_chunk.get());
-                const size_t pos_b = mtmd_input_chunk_get_n_pos(b_chunk.get());
+                const size_t n_tok_a = mtmd_input_chunk_get_n_tokens(a_chunk.get());
+                const size_t n_tok_b = mtmd_input_chunk_get_n_tokens(b_chunk.get());
 
-                if (id_ai == id_bi && pos_a == pos_b) {
-                    GGML_ASSERT(pos_a > 0 && "Invalid media chunk"); // should never happen
-                    i += pos_a - 1; // will be +1 by the for loop
+                if (id_ai == id_bi && n_tok_a == n_tok_b) {
+                    GGML_ASSERT(n_tok_a > 0 && "Invalid media chunk"); // should never happen
+                    i += n_tok_a - 1; // will be +1 by the for loop
                     continue;
                 }
 
@@ -1309,8 +1548,8 @@ public:
             if (t == LLAMA_TOKEN_NULL) {
                 try {
                     const auto & chunk = find_chunk(i);
-                    size_t n_pos = mtmd_input_chunk_get_n_pos(chunk.get());
-                    i += n_pos - 1; // will be +1 by the for loop
+                    size_t n_tokens = mtmd_input_chunk_get_n_tokens(chunk.get());
+                    i += n_tokens - 1; // will be +1 by the for loop
                 } catch (const std::exception & e) {
                     return false;
                 }
@@ -1323,35 +1562,37 @@ public:
 
     // encode and decode the image chunk
     int32_t process_chunk(
-                llama_context * ctx,
-                mtmd_context * mctx,
-                llama_pos n_past,
-                int32_t seq_id,
-                llama_pos & n_pos_out) const {
-        const auto & chunk = find_chunk(n_past);
+            llama_context * ctx,
+            mtmd_context * mctx,
+            size_t idx,
+            llama_pos pos,
+            int32_t seq_id,
+            size_t & n_tokens_out) const {
+        const auto & chunk = find_chunk(idx);
         const char * name = mtmd_input_chunk_get_type(chunk.get()) == MTMD_INPUT_CHUNK_TYPE_IMAGE
                             ? "image" : "audio";
         SRV_INF("processing %s...\n", name);
         int32_t n_batch = llama_n_batch(ctx);
         int64_t t0 = ggml_time_ms();
-        llama_pos new_n_past = n_past;
+        llama_pos new_n_past; // unused for now
         int32_t result = mtmd_helper_eval_chunk_single(mctx, ctx,
-            chunk.get(),
-            n_past,
-            seq_id,
-            n_batch,
-            true, // logits last
-            &new_n_past);
+                                                       chunk.get(),
+                                                       pos,
+                                                       seq_id,
+                                                       n_batch,
+                                                       true, // logits last
+                                                       &new_n_past);
         SRV_INF("%s processed in %" PRId64 " ms\n", name, ggml_time_ms() - t0);
         if (result != 0) {
             LOG_ERR("mtmd_helper_eval failed with status %d", result);
-            n_pos_out = n_past;
+            n_tokens_out = 0;
             return result;
         }
-        n_pos_out = new_n_past;
+        n_tokens_out = mtmd_input_chunk_get_n_tokens(chunk.get());
         return 0;
     }
 };
+
 
 // Computes FNV-1a hash of the data
 static std::string fnv_hash(const uint8_t * data, size_t len) {
