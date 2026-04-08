@@ -9,6 +9,6 @@ package wrapper
 #cgo CFLAGS: -I${SRCDIR}/../core/include
 #cgo CXXFLAGS: -I${SRCDIR}/../core/include
 #cgo LDFLAGS: -framework Foundation -framework Metal -framework MetalKit -framework Accelerate -lstdc++
-#cgo LDFLAGS: -L${SRCDIR}/../build/lib -lllama_core -lllama -lcommon -lcpp-httplib -lwhisper -lwhisper-common -lmtmd -lggml -lggml-base -lggml-cpu -lggml-blas -lggml-metal
+#cgo LDFLAGS: -L${SRCDIR}/../build/lib -lllama_core -lllama -lcommon -lcpp-httplib -lmtmd -lggml -lggml-base -lggml-cpu -lggml-blas -lggml-metal
 */
 import "C"

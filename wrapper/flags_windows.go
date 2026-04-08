@@ -8,6 +8,6 @@ package wrapper
 #cgo CXXFLAGS: -std=c++17
 #cgo CFLAGS: -I${SRCDIR}/../core/include
 #cgo CXXFLAGS: -I${SRCDIR}/../core/include
-#cgo LDFLAGS: -L${SRCDIR}/../build/lib -lllama_core -lcommon -lcpp-httplib -lllama -lwhisper -lwhisper-common -lmtmd -l:ggml.a -l:ggml-base.a -l:ggml-cpu.a -lstdc++ -lws2_32
+#cgo LDFLAGS: -L${SRCDIR}/../build/lib -lllama_core -lcommon -lcpp-httplib -lllama -lmtmd -l:ggml.a -l:ggml-base.a -l:ggml-cpu.a -lstdc++ -lws2_32
 */
 import "C"
