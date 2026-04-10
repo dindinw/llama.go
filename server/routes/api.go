@@ -50,8 +50,12 @@ func (s *API) Setup(r *gin.Engine) {
 	r.POST("/v1/chat/completions", s.ChatHandler)
 
 	r.POST("/v1/embeddings", EmbeddingsMiddleware(), s.EmbedHandler)
-	r.GET("/v1/models", ListMiddleware(), s.ListHandler)
+	r.GET("/v1/models", s.V1ModelsWebUIHandler)
 	r.GET("/v1/models/:model", RetrieveMiddleware(), s.ShowHandler)
+
+	// llama.cpp webui router-mode hooks (no-op in single-model deployment)
+	r.POST("/models/load", s.ModelsLoadStubHandler)
+	r.POST("/models/unload", s.ModelsUnloadStubHandler)
 
 	// webui index
 	r.GET("/", s.IndexHandler)

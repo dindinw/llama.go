@@ -1,57 +1,63 @@
-#include <iostream>
-#include <thread>
 #include <chrono>
 #include <cstdlib>
 #include <future>
-#include <unistd.h>
+#include <iostream>
+#include <sstream>
+#include <thread>
 
 #include "process.h"
+#include "./../src/server/server.h"
+
+namespace {
+
+constexpr int kReadyPollMs = 500;
+constexpr int kReadyMaxPolls = 600;
+
+} // namespace
 
 int main() {
-    const char* env_model = "LLAMA_TEST_MODEL";
-    const char* model = std::getenv(env_model);
+    const char * env_model = "LLAMA_TEST_MODEL";
+    const char * model = std::getenv(env_model);
 
     if (model == nullptr) {
-        std::cerr << "error：can't find " << env_model << std::endl;
+        std::cerr << "error: set " << env_model << " to a .gguf path\n";
         return EXIT_FAILURE;
     }
 
     std::cout << "env: " << env_model << "=" << model << std::endl;
 
     std::stringstream ss;
-    ss << "test_runner_gen -m " << model << " --seed 0";
+    ss << "test_runner_chat -m " << model << " --seed 0";
 
-    int ret = llama_start(ss.str().c_str());
-    if (ret == EXIT_FAILURE) {
-        return ret;
-    }
-
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-    std::future<void> ll_gen = std::async(std::launch::async, [](){
-        std::string js_str="{\"prompt\":\"why the sky is blue\"}";
-        Result result = llama_chat(js_str.c_str());
-        if (!result.ret) {
-            std::cout<<"fail"<<std::endl;
-            return;
+    std::future<void> start = std::async(std::launch::async, [&]() {
+        if (!llama_start(ss.str().c_str())) {
+            std::cerr << "llama_start failed\n";
         }
-
-        std::string content(result.content);
-        if (content.empty()) {
-            std::cout<<"fail"<<std::endl;
-            return;
-        }
-        std::cout<<"Response:"<<content<<std::endl;
-
-        bool ret =llama_stop();
-        std::cout<<"Result1:"<<ret<<std::endl;
     });
 
+    for (int i = 0; i < kReadyMaxPolls && !Server::instance().is_running(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kReadyPollMs));
+    }
 
-    ll_gen.wait();
+    if (!Server::instance().is_running()) {
+        std::cerr << "error: server did not become ready (timeout)\n";
+        (void)llama_stop();
+        start.wait();
+        return EXIT_FAILURE;
+    }
 
+    // OpenAI-style /v1/chat/completions (see oaicompat_chat_params_parse: messages required)
+    const char * body = R"({"messages":[{"role":"user","content":"Say OK in one word."}],"max_tokens":8000,"temperature":0,"stream":true})";
 
-    std::cout<<"success"<<std::endl;
+    const int req_id = 1;
+    Result r = llama_chat(req_id, body);
+    std::cout << "llama_chat ret=" << (r.ret ? "true" : "false") << std::endl;
 
+    const bool stopped = llama_stop();
+    start.wait();
+
+    if (!r.ret || !stopped) {
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }

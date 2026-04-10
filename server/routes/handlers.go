@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -387,13 +388,74 @@ func (s *API) ShowHandler(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("model '%s' not found", showModel)})
 }
 
+// V1ModelsWebUIHandler lists models in the shape expected by llama.cpp tools/server/webui (data[] with path, status, in_cache).
+func (s *API) V1ModelsWebUIHandler(c *gin.Context) {
+	type statusObj struct {
+		Value string `json:"value"`
+	}
+	type dataEntry struct {
+		ID      string    `json:"id"`
+		Object  string    `json:"object"`
+		Created int64     `json:"created"`
+		OwnedBy string    `json:"owned_by"`
+		InCache bool      `json:"in_cache"`
+		Path    string    `json:"path"`
+		Status  statusObj `json:"status"`
+	}
+	activePath := s.cfg.ModelPath()
+	infos := s.cfg.GetModelFileInfos()
+	entries := make([]dataEntry, 0, len(infos))
+	for _, info := range infos {
+		path := s.cfg.GetModelPath(info.Name())
+		if path == "" {
+			path = filepath.Join(s.cfg.ModelDir, info.Name())
+		}
+		st := "unloaded"
+		if activePath != "" && path == activePath {
+			st = "loaded"
+		}
+		owned := "local"
+		if hf, err := model.ParseHuggingFaceModel(info.Name()); err == nil {
+			owned = hf.Namespace
+		}
+		entries = append(entries, dataEntry{
+			ID:      info.Name(),
+			Object:  "model",
+			Created: info.ModTime().Unix(),
+			OwnedBy: owned,
+			InCache: true,
+			Path:    path,
+			Status:  statusObj{Value: st},
+		})
+	}
+	slices.SortStableFunc(entries, func(i, j dataEntry) int {
+		return cmp.Compare(j.Created, i.Created)
+	})
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   entries,
+	})
+}
+
+func (s *API) ModelsLoadStubHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (s *API) ModelsUnloadStubHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 func (s *API) PropsHandler(c *gin.Context) {
-	jsonStr, err := wrapper.GetProps()
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	status, jsonStr := wrapper.LlamaPropsHTTP()
+	if status == 0 {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "llama core is not running"})
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(jsonStr))
+	if jsonStr == "" {
+		c.AbortWithStatusJSON(status, gin.H{"error": "empty response from llama core"})
+		return
+	}
+	c.Data(status, "application/json; charset=utf-8", []byte(jsonStr))
 }
 
 func (s *API) PropsChangeHandler(c *gin.Context) {
@@ -405,10 +467,14 @@ func (s *API) PropsChangeHandler(c *gin.Context) {
 }
 
 func (s *API) SlotsHandler(c *gin.Context) {
-	jsonStr, err := wrapper.GetSlots()
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	status, jsonStr := wrapper.LlamaSlotsHTTP()
+	if status == 0 {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "llama core is not running"})
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(jsonStr))
+	if jsonStr == "" {
+		c.AbortWithStatusJSON(status, gin.H{"error": "empty response from llama core"})
+		return
+	}
+	c.Data(status, "application/json; charset=utf-8", []byte(jsonStr))
 }

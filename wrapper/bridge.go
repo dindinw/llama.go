@@ -48,42 +48,29 @@ func LlamaStopInteractive() error {
 	return nil
 }
 
-func LlamaGenerate(id int, model string, jsStr string) error {
+func LlamaGenerate(id int, jsStr string) error {
 	if len(jsStr) <= 0 {
 		return fmt.Errorf("json string")
 	}
-	if len(model) <= 0 {
-		return fmt.Errorf("model string")
-	}
-	fmt.Println(jsStr)
 	js := C.CString(jsStr)
 	defer C.free(unsafe.Pointer(js))
 
-	m := C.CString(model)
-	defer C.free(unsafe.Pointer(m))
-
-	ret := C.llama_gen(C.int(id), m, js)
+	ret := C.llama_gen(C.int(id), js)
 	if !bool(ret.ret) {
 		return fmt.Errorf("Llama run error")
 	}
 	return nil
 }
 
-func LlamaChat(id int, model string, jsStr string) error {
+func LlamaChat(id int, jsStr string) error {
 	if len(jsStr) <= 0 {
 		return fmt.Errorf("json string")
-	}
-	if len(model) <= 0 {
-		return fmt.Errorf("model string")
 	}
 
 	js := C.CString(jsStr)
 	defer C.free(unsafe.Pointer(js))
 
-	m := C.CString(model)
-	defer C.free(unsafe.Pointer(m))
-
-	ret := C.llama_chat(C.int(id), m, js)
+	ret := C.llama_chat(C.int(id), js)
 	if !bool(ret.ret) {
 		return fmt.Errorf("Llama run error")
 	}
@@ -206,25 +193,29 @@ func GetCommonParams() CommonParams {
 	return CommonParams{EndpointProps: bool(ret.endpoint_props)}
 }
 
-func GetProps() (string, error) {
-	ret := C.get_props()
-	if !bool(ret.ret) {
-		return "", fmt.Errorf("Llama run error")
-	}
-
-	content := C.GoString(ret.content)
-	C.free(unsafe.Pointer(ret.content))
-	return content, nil
+// IsLlamaRunning reports whether the llama_core inference loop is active (model loaded and serving).
+func IsLlamaRunning() bool {
+	return bool(C.llama_is_running())
 }
-func GetSlots() (string, error) {
-	ret := C.get_slots()
-	if !bool(ret.ret) {
-		return "", fmt.Errorf("Llama run error")
-	}
 
-	content := C.GoString(ret.content)
-	C.free(unsafe.Pointer(ret.content))
-	return content, nil
+// LlamaPropsHTTP returns HTTP status and JSON body from llama_core /props.
+func LlamaPropsHTTP() (status int, body string) {
+	r := C.llama_props_http()
+	if r.body != nil {
+		body = C.GoString(r.body)
+		C.free(unsafe.Pointer(r.body))
+	}
+	return int(r.status), body
+}
+
+// LlamaSlotsHTTP returns HTTP status and JSON body from llama_core /slots.
+func LlamaSlotsHTTP() (status int, body string) {
+	r := C.llama_slots_http()
+	if r.body != nil {
+		body = C.GoString(r.body)
+		C.free(unsafe.Pointer(r.body))
+	}
+	return int(r.status), body
 }
 
 func assemblyArgs(cfg *config.Config) string {

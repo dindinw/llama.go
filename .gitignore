@@ -6,5 +6,9 @@ build
 build/bin
 cmake-build-*
 
+# Ad-hoc CMake trees under core/ (canonical: ./build at repo root)
+core/build_agent/
+core/build_*/
+
 # Claude Code configuration
 .claude/settings.local.json

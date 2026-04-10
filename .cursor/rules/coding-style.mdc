@@ -1,0 +1,10 @@
+# Golang Coding Style
+- Always format code using `gofmt` or `go fmt`.
+- Never manually adjust indentation or spacing.
+- Use tabs for indentation (Go default).
+- Keep line length around 100 characters.
+
+# C++ Coding Style
+- Code must be readable, maintainable, and consistent.
+- Prefer modern C++ (C++17 or later).
+- Avoid overly complex abstractions.

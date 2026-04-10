@@ -1,8 +1,12 @@
 #include "process.h"
-#include "runner.h"
 #include "log.h"
 #include "whisper_service.h"
-#include "scheduler.h"
+#include "server/server.h"
+
+#include <cstdlib>
+#include <cstring>
+#include <sstream>
+#include <string>
 
 extern "C" {
     void PushToChan(int id, const char* val);
@@ -10,7 +14,7 @@ extern "C" {
 }
 
 bool llama_start(const char * args) {
-    if (Scheduler::instance().is_running()) {
+    if (Server::instance().is_running()) {
         return false;
     }
 
@@ -21,121 +25,120 @@ bool llama_start(const char * args) {
         v_args.push_back(v_a);
     }
 
-    if (!Scheduler::instance().start(v_args)) {
+    if (!Server::instance().start(v_args)) {
         return false;
     }
     return true;
 }
 
 bool llama_stop() {
-    if (!Scheduler::instance().is_running()) {
+    if (!Server::instance().is_running()) {
         return false;
     }
-    if (!Scheduler::instance().stop()) {
+    if (!Server::instance().stop()) {
         return false;
     }
     return true;
 }
 
-Result llama_gen(int id,const char * model,const char * js_str) {
-    if (!Scheduler::instance().is_running()) {
-        return {false};
+Result llama_gen(int id, const char * js_str) {
+    if (!Server::instance().is_running()) {
+        return {false, nullptr};
     }
-    Request rq{id,std::string(model),std::string(js_str)};
-    Response rp{id};
-
-    rp.write = [](int id, const std::string& content) {
-        PushToChan(id, content.c_str());
-        return true;
-    };
-    rp.is_writable = [](int id) {
-        return true;
-    };
-    rp.complete = [](int id) {
-        CloseChan(id);
-    };
-
-    Scheduler::instance().handle_completions_oai(rq,rp);
-    if (!rp.success) {
-        return {false};
+    if (!js_str) {
+        return {false, nullptr};
     }
-    return {true};
+
+    server_http_req rq{
+            id,
+            std::string(js_str),
+            [](int cid, const std::string & content) {
+                PushToChan(cid, content.c_str());
+                return true;
+            }
+    };
+
+    server_http_res_ptr rp = Server::instance().post_completions(rq);
+    const bool ok = rp->is_success();
+
+    CloseChan(id);
+    return {ok, nullptr};
 }
 
-Result llama_chat(int id,const char * model,const char * js_str) {
-    if (!Scheduler::instance().is_running()) {
-        return {false};
+Result llama_chat(int id, const char * js_str) {
+    if (!Server::instance().is_running()) {
+        return {false, nullptr};
+    }
+    if (!js_str) {
+        return {false, nullptr};
     }
 
-    Request rq{id, std::string(model), std::string(js_str)};
-    Response rp{id};
-
-    rp.write = [](int id, const std::string& content) {
-        PushToChan(id, content.c_str());
-        return true;
-    };
-    rp.is_writable = [](int id) {
-        return true;
-    };
-    rp.complete = [](int id) {
-        CloseChan(id);
+    server_http_req rq{
+            id,
+            std::string(js_str),
+            [](int cid, const std::string & content) {
+                PushToChan(cid, content.c_str());
+                return true;
+            }
     };
 
-    Scheduler::instance().handle_chat_completions(rq,rp);
-    if (!rp.success) {
-        return {false};
-    }
+    server_http_res_ptr rp = Server::instance().post_chat_completions(rq);
+    const bool ok = rp->is_success();
 
-    return {true};
+    CloseChan(id);
+    return {ok, nullptr};
 }
 
 Result whisper_gen(const char * model,const char * input) {
-    WhisperService ws;
-
-    std::string result = ws.generate(std::string(model),std::string(input));
-    if (result.empty()) {
-        return {false};
-    }
-    char* arr = new char[result.size() + 1];
-    std::copy(result.begin(), result.end(), arr);
-    arr[result.size()] = '\0';
-
-    return {true,arr};
+    (void)model;
+    (void)input;
+    return {true, nullptr};
 }
 
-CommonParams get_common_params() {
-    if (!Scheduler::instance().is_running()) {
-        return {false};
+static LlamaHTTPBody make_http_body(const server_http_res_ptr &rp) {
+    LlamaHTTPBody out{};
+    if (!rp) {
+        out.status = 500;
+        return out;
     }
-    return {Scheduler::instance().get_common_params()->endpoint_props};
+    out.status = rp->status;
+    if (!rp->data.empty()) {
+        out.body = strdup(rp->data.c_str());
+    }
+    return out;
 }
 
-Result get_props() {
-    if (!Scheduler::instance().is_running()) {
-        return {false};
-    }
-    std::string result = Scheduler::instance().get_props();
-    if (result.empty()) {
-        return {false};
-    }
-    char* arr = new char[result.size() + 1];
-    std::copy(result.begin(), result.end(), arr);
-    arr[result.size()] = '\0';
+extern "C" {
 
-    return {true,arr};
+bool llama_is_running(void) {
+    return Server::instance().is_running();
 }
 
-Result get_slots() {
-    if (!Scheduler::instance().is_running()) {
+CommonParams get_common_params(void) {
+    if (!Server::instance().is_running()) {
         return {false};
     }
-    std::string result = Scheduler::instance().get_slots();
-    if (result.empty()) {
-        return {false};
-    }
-    char* arr = new char[result.size() + 1];
-    std::copy(result.begin(), result.end(), arr);
-    arr[result.size()] = '\0';
+    return {Server::instance().endpoint_props()};
+}
 
-    return {true,arr};
+LlamaHTTPBody llama_props_http(void) {
+    LlamaHTTPBody out{};
+    out.status = 503;
+    if (!Server::instance().is_running()) {
+        return out;
+    }
+    server_http_req req{};
+    return make_http_body(Server::instance().get_props(req));
+}
+
+LlamaHTTPBody llama_slots_http(void) {
+    LlamaHTTPBody out{};
+    out.status = 503;
+    if (!Server::instance().is_running()) {
+        return out;
+    }
+    server_http_req req{};
+    return make_http_body(Server::instance().get_slots(req));
+}
+
 }

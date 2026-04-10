@@ -22,33 +22,41 @@ set(GGML_OPENMP OFF)
 set(GGML_STATIC ON)
 set(BUILD_SHARED_LIBS OFF)
 set(LLAMA_BUILD_COMMON ON)
+set(LLAMA_BUILD_TOOLS ON)
 set(LLAMA_CURL OFF)
 add_subdirectory(llama.cpp ${CMAKE_BINARY_DIR}/llama)
-add_subdirectory(./llama.cpp/tools/mtmd)
-
-# whisper.cpp
-set(WHISPER_COMMON_TARGET "whisper-common")
-set(WHISPER_BUILD_EXAMPLES ON)
-add_subdirectory(whisper.cpp ${CMAKE_BINARY_DIR}/whisper)
 
 # core
-set(SRCS src/interactive.cpp src/process.cpp src/runner.cpp src/event_processor.cpp src/embedding.cpp src/whisper_service.cpp src/scheduler.cpp src/server_context.h)
+set(SRCS
+    src/process_go_bridge_stub.cpp
+    src/interactive.cpp
+    src/process.cpp
+    src/runner.cpp
+    src/event_processor.cpp
+    src/embedding.cpp
+    src/safe_queue.cpp
+    src/server/server.cpp
+    src/server/server-models.cpp
+    src/server/server-task.cpp
+    src/server/server-queue.cpp
+    src/server/server-common.cpp
+    src/server/server-context.cpp
+)
+
 set(TARGET llama_core)
 
 include_directories(./include)
 include_directories(./llama.cpp/include)
 include_directories(./llama.cpp/common)
 include_directories(./llama.cpp/tools/mtmd)
-include_directories(./whisper.cpp/include)
-include_directories(./whisper.cpp)
 
 link_directories(${CMAKE_BINARY_DIR}/lib)
 
 add_library(${TARGET} STATIC ${SRCS})
-target_link_libraries(${TARGET} PRIVATE common llama whisper-common whisper mtmd ${CMAKE_THREAD_LIBS_INIT} ${FFMPEG_LIBRARIES})
+target_link_libraries(${TARGET} PRIVATE common llama mtmd)
 
 # test
-option(BUILD_TEST "Build the testing tree." OFF)
+option(BUILD_TEST "Build the testing tree." ON)
 
 if(BUILD_TEST)
     include(CTest)

@@ -1,56 +1,63 @@
-#include <iostream>
-#include <thread>
 #include <chrono>
 #include <cstdlib>
 #include <future>
+#include <iostream>
+#include <sstream>
+#include <thread>
 
-#include "./../src/scheduler.h"
-#include "log.h"
+#include "process.h"
+#include "./../src/server/server.h"
+
+namespace {
+
+constexpr int kReadyPollMs = 500;
+constexpr int kReadyMaxPolls = 600; // up to ~5 minutes for large models
+
+} // namespace
 
 int main() {
-    common_log_verbosity_thold=1;
-    const char* env_model = "LLAMA_TEST_MODEL";
-    const char* model = std::getenv(env_model);
+    const char * env_model = "LLAMA_TEST_MODEL";
+    const char * model = std::getenv(env_model);
 
     if (model == nullptr) {
-        std::cerr << "error：can't find " << env_model << std::endl;
+        std::cerr << "error: set " << env_model << " to a .gguf path\n";
         return EXIT_FAILURE;
     }
 
     std::cout << "env: " << env_model << "=" << model << std::endl;
 
-    std::vector<std::string> v_args;
-    v_args.push_back("test_runner_gen");
-    v_args.push_back("-m");
-    v_args.push_back(model);
-    v_args.push_back("--seed");
-    v_args.push_back("0");
+    std::stringstream ss;
+    ss << "test_runner_gen -m " << model << " --seed 0";
 
-    if (!Scheduler::instance().start(v_args)) {
+    std::future<void> start = std::async(std::launch::async, [&]() {
+        if (!llama_start(ss.str().c_str())) {
+            std::cerr << "llama_start failed\n";
+        }
+    });
+
+    for (int i = 0; i < kReadyMaxPolls && !Server::instance().is_running(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kReadyPollMs));
+    }
+
+    if (!Server::instance().is_running()) {
+        std::cerr << "error: server did not become ready (timeout)\n";
+        (void)llama_stop();
+        start.wait();
         return EXIT_FAILURE;
     }
 
-    std::string js_str="{\"prompt\":\"why the sky is blue\"}";
-    //std::string js_str="{\"prompt\":\"why the sky is blue\",\"stream\":true}";
+    // OpenAI-style /v1/completions body (see oaicompat_completion_params_parse)
+    const char * body = R"({"prompt":"Say OK in one word.","max_tokens":80,"temperature":0,"stream":true})";
 
-    int id=1;
-    Request rq{id,std::string(js_str)};
-    Response rp{id};
+    const int req_id = 1;
+    Result r = llama_gen(req_id, body);
+    std::cout << "llama_gen ret=" << (r.ret ? "true" : "false") << std::endl;
 
-    rp.write = [](int id, const std::string& content) {
-        std::cout<<content;
-        return true;
-    };
-    rp.is_writable = [](int id) {
-        return true;
-    };
-    rp.complete = [&](int id) {};
+    const bool stopped = llama_stop();
+    start.wait();
 
-    Scheduler::instance().handle_completions_oai(rq,rp);
-    if (!rp.success) {
+    if (!r.ret || !stopped) {
         return EXIT_FAILURE;
     }
-
-    std::cout<<"stop:"<<Scheduler::instance().stop()<<std::endl;
     return EXIT_SUCCESS;
 }

@@ -1,0 +1,21 @@
+---
+description: Canonical CMake / C++ build layout for this repo (matches make).
+alwaysApply: true
+---
+
+# Build layout
+
+- **Project root** is the Go repo root (directory containing `Makefile` and `cmd/`).
+- **Official C++ configure** is the same as `make` / `scripts/build.sh`:
+  - Source: `core/` (top-level `CMakeLists.txt` lives there).
+  - Binary / build tree: **`build/` at the repo root**, not under `core/`.
+- **Do not** create ad-hoc directories such as `core/build_agent`, `core/cmake-build-*`, or random `-B` paths for routine builds. That duplicates artifacts and diverges from `LD_LIBRARY_PATH` / `go build` output paths used by `build.sh`.
+
+## Commands (from repo root)
+
+- Full project (C++ + Go binary): `make` or `./scripts/build.sh`.
+- CMake only (llama_core):  
+  `cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles" -S core -B build`  
+  then `cmake --build build --target llama_core -j`.
+
+The CMake Tools / preset **default** preset in `CMakePresets.json` uses `sourceDir` = `core` and `binaryDir` = `build` at the repo root.
