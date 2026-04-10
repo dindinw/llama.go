@@ -4,7 +4,6 @@
 #include "preset.h"
 #include "download.h"
 
-#include <cpp-httplib/httplib.h> // TODO: remove this once we use HTTP client from download.h
 #include <sheredom/subprocess.h>
 
 #include <functional>
@@ -18,6 +17,8 @@
 #include <queue>
 #include <filesystem>
 #include <cstring>
+#include <unordered_set>
+#include <iostream>
 
 #ifdef _WIN32
 #include <winsock2.h>
