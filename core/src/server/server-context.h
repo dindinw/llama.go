@@ -1,3 +1,5 @@
+#pragma once
+
 #include "server-http.h"
 #include "server-task.h"
 #include "server-queue.h"
@@ -6,12 +8,15 @@
 
 #include <cstddef>
 #include <memory>
+#include <set>
 
 struct server_context_impl; // private implementation
 
 struct server_context_meta {
     std::string build_info;
     std::string model_name;
+    std::set<std::string> model_aliases;
+    std::set<std::string> model_tags;
     std::string model_path;
     bool has_mtmd;
     bool has_inp_image;
@@ -30,6 +35,12 @@ struct server_context_meta {
     llama_token fim_pre_token;
     llama_token fim_sub_token;
     llama_token fim_mid_token;
+    llama_token fim_pad_token;
+    llama_token fim_rep_token;
+    llama_token fim_sep_token;
+
+    // sampling
+    std::vector<llama_logit_bias> logit_bias_eog;
 
     // model meta
     enum llama_vocab_type model_vocab_type;
@@ -48,17 +59,13 @@ struct server_context {
 
     // load the model and initialize llama_context
     // returns true on success
-    bool load_model(const common_params & params);
+    bool load_model(common_params & params);
 
     // this function will block main thread until termination
     void start_loop();
 
     // terminate main loop (will unblock start_loop)
     void terminate();
-
-    // Release model/context/GGML (incl. Metal buffers) before process teardown. Required on
-    // macOS so ggml_metal rsets are empty when static Metal devices are destroyed.
-    void unload_for_process_exit();
 
     // get the underlaying llama_context, can return nullptr if sleeping
     // not thread-safe, should only be used from the main thread
@@ -70,6 +77,10 @@ struct server_context {
     // get server metadata (read-only), can only be called after load_model()
     // not thread-safe, should only be used from the main thread
     server_context_meta get_meta() const;
+
+    // register a callback to be called when sleeping state changes
+    // must be set before load_model() is called
+    void on_sleeping_changed(std::function<void(bool)> callback);
 };
 
 
@@ -88,29 +99,29 @@ struct server_routes {
 
     // handlers using lambda function, so that they can capture `this` without `std::bind`
     // they won't be called until ctx_http.is_ready is set to true
-    handler_t get_health;
-    handler_t get_metrics;
-    handler_t get_slots;
-    handler_t post_slots;
-    handler_t get_props;
-    handler_t post_props;
-    handler_t get_api_show;
-    handler_t post_infill;
-    handler_t post_completions;
-    handler_t post_completions_oai;
-    handler_t post_chat_completions;
-    handler_t post_responses_oai;
-    handler_t post_anthropic_messages;
-    handler_t post_anthropic_count_tokens;
-    handler_t post_apply_template;
-    handler_t get_models;
-    handler_t post_tokenize;
-    handler_t post_detokenize;
-    handler_t post_embeddings;
-    handler_t post_embeddings_oai;
-    handler_t post_rerank;
-    handler_t get_lora_adapters;
-    handler_t post_lora_adapters;
+    server_http_context::handler_t get_health;
+    server_http_context::handler_t get_metrics;
+    server_http_context::handler_t get_slots;
+    server_http_context::handler_t post_slots;
+    server_http_context::handler_t get_props;
+    server_http_context::handler_t post_props;
+    server_http_context::handler_t get_api_show;
+    server_http_context::handler_t post_infill;
+    server_http_context::handler_t post_completions;
+    server_http_context::handler_t post_completions_oai;
+    server_http_context::handler_t post_chat_completions;
+    server_http_context::handler_t post_responses_oai;
+    server_http_context::handler_t post_anthropic_messages;
+    server_http_context::handler_t post_anthropic_count_tokens;
+    server_http_context::handler_t post_apply_template;
+    server_http_context::handler_t get_models;
+    server_http_context::handler_t post_tokenize;
+    server_http_context::handler_t post_detokenize;
+    server_http_context::handler_t post_embeddings;
+    server_http_context::handler_t post_embeddings_oai;
+    server_http_context::handler_t post_rerank;
+    server_http_context::handler_t get_lora_adapters;
+    server_http_context::handler_t post_lora_adapters;
 
     bool endpoint_props_enabled() const { return params.endpoint_props; }
 

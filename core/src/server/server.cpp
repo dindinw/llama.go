@@ -1,7 +1,5 @@
 #include "server.h"
 
-#include "server-models.h"
-
 #include "arg.h"
 #include "common.h"
 #include "llama.h"
@@ -39,7 +37,7 @@ void Server::flush_http_response_to_sink(const server_http_req & rq, server_http
 
 // wrapper function that handles exceptions and logs errors
 // this is to make sure handler_t never throws exceptions; instead, it returns an error response
-static handler_t ex_wrapper(handler_t func) {
+static server_http_context::handler_t ex_wrapper(server_http_context::handler_t func) {
     return [func = std::move(func)](const server_http_req & req) -> server_http_res_ptr {
         std::string message;
         error_type error;
@@ -115,7 +113,7 @@ bool Server::start(const std::vector<std::string>& args) {
 
     // for consistency between server router mode and single-model mode, we set the same model name as alias
     if (params.model_alias.empty() && !params.model.name.empty()) {
-        params.model_alias = params.model.name;
+        params.model_alias.insert(params.model.name);
     }
 
     common_init();
@@ -143,9 +141,6 @@ bool Server::start(const std::vector<std::string>& args) {
     clean_up = [&]() {
         SRV_INF("%s: cleaning up before exit...\n", __func__);
         ctx_server.terminate();
-        // llama_backend_free() only clears quant tables; Metal devices are global until exit.
-        // Must free all GGML/Metal buffers first or ggml_metal_rsets_free asserts (macOS 15+).
-        ctx_server.unload_for_process_exit();
         llama_backend_free();
     };
 
@@ -188,7 +183,7 @@ bool Server::is_running() const {
     return running;
 }
 
-server_http_res_ptr Server::process(const handler_t& func,const server_http_req& req) {
+server_http_res_ptr Server::process(const server_http_context::handler_t& func,const server_http_req& req) {
     auto handler = ex_wrapper(func);
 
     std::unique_ptr<server_http_req> request = std::make_unique<server_http_req>(req);

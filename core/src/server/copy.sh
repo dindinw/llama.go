@@ -1,0 +1,11 @@
+cp ../../llama.cpp/tools/server/server-common.h     server-common.h
+cp ../../llama.cpp/tools/server/server-common.cpp   server-common.cpp
+cp ../../llama.cpp/tools/server/server-models.h     server-models.h
+cp ../../llama.cpp/tools/server/server-models.cpp   server-models.cpp
+cp ../../llama.cpp/tools/server/server-task.h       server-task.h
+cp ../../llama.cpp/tools/server/server-task.cpp     server-task.cpp
+cp ../../llama.cpp/tools/server/server-queue.h      server-queue.h
+cp ../../llama.cpp/tools/server/server-queue.cpp    server-queue.cpp
+cp ../../llama.cpp/tools/server/server-context.h    server-context.h
+cp ../../llama.cpp/tools/server/server-context.cpp  server-context.cpp
+cp ../../llama.cpp/tools/server/server-http.h       server-http.h

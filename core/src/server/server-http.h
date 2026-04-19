@@ -6,6 +6,8 @@
 #include <string>
 #include <thread>
 
+struct common_params;
+
 // generator-like API for HTTP response generation
 // this object response with one of the 2 modes:
 // 1) normal response: `data` contains the full response body
@@ -41,9 +43,10 @@ struct server_http_req {
     const std::function<bool(int,const std::string&)> write{};
     const std::function<bool()> should_stop=[] { return false; };
 
-    std::map<std::string, std::string> params{}; // path_params + query_params
-    std::map<std::string, std::string> headers{}; // reserved for future use
-    std::string path{}; // reserved for future use
+    std::map<std::string, std::string> params; // path_params + query_params
+    std::map<std::string, std::string> headers; // used by MCP proxy
+    std::string path;
+    std::string query_string; // query parameters string (e.g. "action=save")
 
     std::string get_param(const std::string & key, const std::string & def = "") const {
         auto it = params.find(key);
@@ -54,4 +57,30 @@ struct server_http_req {
     }
 };
 
-using handler_t = std::function<server_http_res_ptr(const server_http_req & req)>;
+struct server_http_context {
+    class Impl;
+    std::unique_ptr<Impl> pimpl;
+
+    std::thread thread; // server thread
+    std::atomic<bool> is_ready = false;
+
+    std::string path_prefix;
+    std::string hostname;
+    int port;
+
+    server_http_context();
+    ~server_http_context();
+
+    bool init(const common_params & params);
+    bool start();
+    void stop() const;
+
+    // note: the handler should never throw exceptions
+    using handler_t = std::function<server_http_res_ptr(const server_http_req & req)>;
+
+    void get(const std::string & path, const handler_t & handler) const;
+    void post(const std::string & path, const handler_t & handler) const;
+
+    // for debugging
+    std::string listening_address;
+};

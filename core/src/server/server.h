@@ -24,7 +24,7 @@ public:
     bool start(const std::vector<std::string>& args);
     bool stop();
 
-    server_http_res_ptr process(const handler_t& func,const server_http_req& req);
+    server_http_res_ptr process(const server_http_context::handler_t& func,const server_http_req& req);
     bool get_health();
     server_http_res_ptr post_completions(const server_http_req& req);
     server_http_res_ptr post_chat_completions(const server_http_req& req);
