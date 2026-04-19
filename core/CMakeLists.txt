@@ -53,7 +53,7 @@ include_directories(./llama.cpp/tools/mtmd)
 link_directories(${CMAKE_BINARY_DIR}/lib)
 
 add_library(${TARGET} STATIC ${SRCS})
-target_link_libraries(${TARGET} PRIVATE common llama mtmd)
+target_link_libraries(${TARGET} PRIVATE llama-common-base llama-common llama mtmd)
 
 # test
 option(BUILD_TEST "Build the testing tree." ON)
