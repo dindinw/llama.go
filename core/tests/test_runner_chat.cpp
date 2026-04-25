@@ -6,7 +6,7 @@
 #include <thread>
 
 #include "process.h"
-#include "./../src/server/server.h"
+#include "../src/server.h"
 
 namespace {
 

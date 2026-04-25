@@ -5,7 +5,7 @@
 #include <future>
 
 #include "process.h"
-#include "./../src/server/server.h"
+#include "../src/server.h"
 
 int main() {
     const char* env_model = "LLAMA_TEST_MODEL";
