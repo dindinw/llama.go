@@ -104,6 +104,15 @@ link_directories(${CMAKE_BINARY_DIR}/lib)
 add_library(${TARGET} STATIC ${SRCS})
 target_link_libraries(${TARGET} PRIVATE llama-common-base llama-common llama mtmd whisper)
 
+# common-whisper.cpp defines MINIAUDIO_IMPLEMENTATION which duplicates the
+# ma_atomic_global_lock symbol already defined in mtmd-helper.cpp (libmtmd).
+# Rename the symbol in this TU to avoid the duplicate-symbol linker error.
+set_source_files_properties(
+    whisper.cpp/examples/common-whisper.cpp
+    PROPERTIES
+    COMPILE_DEFINITIONS "ma_atomic_global_lock=whisper_ma_atomic_global_lock"
+)
+
 # test
 option(BUILD_TEST "Build the testing tree." ON)
 

@@ -141,11 +141,6 @@ bool Server::start(const std::vector<std::string>& args) {
     // blocks until ctx_server->terminate() is called
     ctx_server->start_loop();
 
-    auto * ll_ctx = ctx_server->get_llama_context();
-    if (ll_ctx != nullptr) {
-        llama_memory_breakdown_print(ll_ctx);
-    }
-
     SRV_INF("%s: cleaning up before exit...\n", __func__);
 
     // Destroy routes first: it holds a const-ref to server_context_impl.

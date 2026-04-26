@@ -53,7 +53,8 @@ const (
 
 	DefaultNGpuLayers = -1
 
-	EXT = ".gguf" // TODO:We will soon release our better format
+	EXT     = ".gguf" // TODO:We will soon release our better format
+	EXT_BIN = ".bin"
 )
 
 var (
@@ -275,7 +276,7 @@ func (c *Config) ModelPath() string {
 	if len(c.Model) <= 0 {
 		return ""
 	}
-	if !strings.Contains(c.Model, EXT) {
+	if !strings.Contains(c.Model, EXT) && !strings.Contains(c.Model, EXT_BIN) {
 		return ""
 	}
 	if common.IsFilePath(c.Model) {
