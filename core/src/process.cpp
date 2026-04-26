@@ -1,7 +1,7 @@
 #include "process.h"
 #include "log.h"
 #include "whisper_service.h"
-#include "server/server.h"
+#include "server.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -49,17 +49,14 @@ Result llama_gen(int id, const char * js_str) {
         return {false, nullptr};
     }
 
-    server_http_req rq{
-            id,
-            std::string(js_str),
-            [](int cid, const std::string & content) {
-                PushToChan(cid, content.c_str());
-                return true;
-            }
-    };
+    server_http_req rq = make_server_req(std::string(js_str));
+    server_write_sink sink{id, [](int cid, const std::string & content) {
+        PushToChan(cid, content.c_str());
+        return true;
+    }};
 
-    server_http_res_ptr rp = Server::instance().post_completions(rq);
-    const bool ok = rp->is_success();
+    server_http_res_ptr rp = Server::instance().post_completions(rq, sink);
+    const bool ok = (rp->status == 200);
 
     CloseChan(id);
     return {ok, nullptr};
@@ -73,26 +70,29 @@ Result llama_chat(int id, const char * js_str) {
         return {false, nullptr};
     }
 
-    server_http_req rq{
-            id,
-            std::string(js_str),
-            [](int cid, const std::string & content) {
-                PushToChan(cid, content.c_str());
-                return true;
-            }
-    };
+    server_http_req rq = make_server_req(std::string(js_str));
+    server_write_sink sink{id, [](int cid, const std::string & content) {
+        PushToChan(cid, content.c_str());
+        return true;
+    }};
 
-    server_http_res_ptr rp = Server::instance().post_chat_completions(rq);
-    const bool ok = rp->is_success();
+    server_http_res_ptr rp = Server::instance().post_chat_completions(rq, sink);
+    const bool ok = (rp->status == 200);
 
     CloseChan(id);
     return {ok, nullptr};
 }
 
-Result whisper_gen(const char * model,const char * input) {
-    (void)model;
-    (void)input;
-    return {true, nullptr};
+Result whisper_gen(const char * model, const char * input) {
+    if (!model || !input) {
+        return {false, nullptr};
+    }
+    WhisperService svc;
+    std::string text = svc.generate(std::string(model), std::string(input));
+    if (text.empty()) {
+        return {false, nullptr};
+    }
+    return {true, strdup(text.c_str())};
 }
 
 static LlamaHTTPBody make_http_body(const server_http_res_ptr &rp) {
@@ -127,7 +127,7 @@ LlamaHTTPBody llama_props_http(void) {
     if (!Server::instance().is_running()) {
         return out;
     }
-    server_http_req req{};
+    server_http_req req = make_server_req();
     return make_http_body(Server::instance().get_props(req));
 }
 
@@ -137,7 +137,7 @@ LlamaHTTPBody llama_slots_http(void) {
     if (!Server::instance().is_running()) {
         return out;
     }
-    server_http_req req{};
+    server_http_req req = make_server_req();
     return make_http_body(Server::instance().get_slots(req));
 }
 
