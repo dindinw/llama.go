@@ -82,6 +82,7 @@ set(SRCS
     whisper.cpp/examples/common.cpp
     llama.cpp/tools/server/server-models.cpp
     llama.cpp/tools/server/server-http.cpp
+    llama.cpp/tools/server/server-chat.cpp
     llama.cpp/tools/server/server-context.cpp
     llama.cpp/tools/server/server-task.cpp
     llama.cpp/tools/server/server-queue.cpp
