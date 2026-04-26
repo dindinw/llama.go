@@ -156,7 +156,6 @@ func whisperCmd() *cli.Command {
 				Usage:   "Input file path for generate.",
 			},
 		},
-		Before: OnBefore,
 		Action: func(ctx *cli.Context) error {
 			cfg := config.Conf
 			log.Info("Start whisper")
