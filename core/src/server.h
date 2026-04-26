@@ -22,7 +22,8 @@ inline const std::function<bool()> & server_never_stop() {
 
 // Constructs a server_http_req with only a body; all other fields are defaults.
 inline server_http_req make_server_req(std::string body = {}) {
-    return server_http_req{{}, {}, {}, std::move(body), server_never_stop()};
+    // field order: params, headers, path, query_string, body, files, should_stop
+    return server_http_req{{}, {}, {}, {}, std::move(body), {}, server_never_stop()};
 }
 
 // CGO write sink: carries the channel id and the streaming push callback.

@@ -31,21 +31,34 @@ set(SERVER_PUBLIC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server/public)
 set(SERVER_ASSETS_DIR ${CMAKE_BINARY_DIR}/server_assets)
 file(MAKE_DIRECTORY ${SERVER_ASSETS_DIR})
 
-foreach(asset index.html.gz loading.html)
-    set(input  "${SERVER_PUBLIC_DIR}/${asset}")
-    set(output "${SERVER_ASSETS_DIR}/${asset}.hpp")
-    list(APPEND GENERATED_ASSETS ${output})
-    add_custom_command(
-        OUTPUT  "${output}"
-        DEPENDS "${input}"
-        COMMAND "${CMAKE_COMMAND}"
-                "-DINPUT=${input}"
-                "-DOUTPUT=${output}"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/scripts/xxd.cmake"
-        COMMENT "Generating ${asset}.hpp"
-    )
-endforeach()
+# loading.html — present in public/ directly
+set(_lh_in  "${SERVER_PUBLIC_DIR}/loading.html")
+set(_lh_out "${SERVER_ASSETS_DIR}/loading.html.hpp")
+add_custom_command(
+    OUTPUT  "${_lh_out}"
+    DEPENDS "${_lh_in}"
+    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${_lh_in}" "-DOUTPUT=${_lh_out}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/scripts/xxd.cmake"
+    COMMENT "Generating loading.html.hpp"
+)
 
+# index.html.gz — compress index.html first, then embed via xxd
+set(_html_in "${SERVER_PUBLIC_DIR}/index.html")
+set(_gz_file "${SERVER_ASSETS_DIR}/index.html.gz")
+set(_gz_out  "${SERVER_ASSETS_DIR}/index.html.gz.hpp")
+add_custom_command(
+    OUTPUT  "${_gz_out}"
+    DEPENDS "${_html_in}"
+    COMMAND "${CMAKE_COMMAND}"
+            "-DINPUT=${_html_in}"
+            "-DOUTPUT=${_gz_file}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gzip_file.cmake"
+    COMMAND "${CMAKE_COMMAND}" "-DINPUT=${_gz_file}" "-DOUTPUT=${_gz_out}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/scripts/xxd.cmake"
+    COMMENT "Compressing index.html and generating index.html.gz.hpp"
+)
+
+set(GENERATED_ASSETS "${_lh_out}" "${_gz_out}")
 include_directories(${SERVER_ASSETS_DIR})
 
 # core
@@ -72,13 +85,14 @@ set(TARGET llama_core)
 include_directories(./include)
 include_directories(./llama.cpp/include)
 include_directories(./llama.cpp/common)
+include_directories(./llama.cpp/vendor)
 include_directories(./llama.cpp/tools/mtmd)
 include_directories(./llama.cpp/tools/server)
 
 link_directories(${CMAKE_BINARY_DIR}/lib)
 
 add_library(${TARGET} STATIC ${SRCS})
-target_link_libraries(${TARGET} PRIVATE common llama mtmd)
+target_link_libraries(${TARGET} PRIVATE llama-common-base llama-common llama mtmd)
 
 # test
 option(BUILD_TEST "Build the testing tree." ON)

@@ -101,7 +101,7 @@ bool Server::start(const std::vector<std::string>& args) {
     }
 
     if (params.model_alias.empty() && !params.model.name.empty()) {
-        params.model_alias = params.model.name;
+        params.model_alias = {params.model.name};
     }
 
     _endpoint_props = params.endpoint_props;
