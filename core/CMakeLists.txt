@@ -26,6 +26,12 @@ set(LLAMA_BUILD_TOOLS ON)
 set(LLAMA_CURL OFF)
 add_subdirectory(llama.cpp ${CMAKE_BINARY_DIR}/llama)
 
+# whisper.cpp — reuse the ggml already built by llama.cpp
+set(WHISPER_BUILD_TESTS    OFF)
+set(WHISPER_BUILD_EXAMPLES OFF)
+set(WHISPER_BUILD_SERVER   OFF)
+add_subdirectory(whisper.cpp ${CMAKE_BINARY_DIR}/whisper)
+
 # Generate embedded web UI assets required by server-http.cpp
 set(SERVER_PUBLIC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/server/public)
 set(SERVER_ASSETS_DIR ${CMAKE_BINARY_DIR}/server_assets)
@@ -67,11 +73,13 @@ set(SRCS
     src/process_go_bridge_stub.cpp
     src/interactive.cpp
     src/process.cpp
-    src/runner.cpp
     src/event_processor.cpp
     src/embedding.cpp
     src/safe_queue.cpp
     src/server.cpp
+    src/whisper_service.cpp
+    whisper.cpp/examples/common-whisper.cpp
+    whisper.cpp/examples/common.cpp
     llama.cpp/tools/server/server-models.cpp
     llama.cpp/tools/server/server-http.cpp
     llama.cpp/tools/server/server-context.cpp
@@ -88,11 +96,13 @@ include_directories(./llama.cpp/common)
 include_directories(./llama.cpp/vendor)
 include_directories(./llama.cpp/tools/mtmd)
 include_directories(./llama.cpp/tools/server)
+include_directories(./whisper.cpp/include)
+include_directories(./whisper.cpp/examples)
 
 link_directories(${CMAKE_BINARY_DIR}/lib)
 
 add_library(${TARGET} STATIC ${SRCS})
-target_link_libraries(${TARGET} PRIVATE llama-common-base llama-common llama mtmd)
+target_link_libraries(${TARGET} PRIVATE llama-common-base llama-common llama mtmd whisper)
 
 # test
 option(BUILD_TEST "Build the testing tree." ON)

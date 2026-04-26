@@ -83,10 +83,16 @@ Result llama_chat(int id, const char * js_str) {
     return {ok, nullptr};
 }
 
-Result whisper_gen(const char * model,const char * input) {
-    (void)model;
-    (void)input;
-    return {true, nullptr};
+Result whisper_gen(const char * model, const char * input) {
+    if (!model || !input) {
+        return {false, nullptr};
+    }
+    WhisperService svc;
+    std::string text = svc.generate(std::string(model), std::string(input));
+    if (text.empty()) {
+        return {false, nullptr};
+    }
+    return {true, strdup(text.c_str())};
 }
 
 static LlamaHTTPBody make_http_body(const server_http_res_ptr &rp) {
