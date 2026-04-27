@@ -89,6 +89,6 @@ cd ./cmd/llama
 go build $cudaTag -ldflags "-X ${versionBuild}" -o $buildDir/bin/llama
 
 echo "Output executable file:${buildDir}/bin/llama"
-$buildDir/bin/llama --version
+$buildDir/bin/llama version
 
 

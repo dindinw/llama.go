@@ -1,6 +1,6 @@
 [submodule "core/llama.cpp"]
 	path = core/llama.cpp
-	url = https://github.com/Qitmeer/llama.cpp.git
+	url = https://github.com/ggml-org/llama.cpp.git
 [submodule "core/whisper.cpp"]
 	path = core/whisper.cpp
 	url = https://github.com/lochjin/whisper.cpp.git

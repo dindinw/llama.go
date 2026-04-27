@@ -5,6 +5,7 @@ package version
 import (
 	"bytes"
 	"fmt"
+	"github.com/Qitmeer/llama.go/wrapper"
 	"strings"
 )
 
@@ -65,6 +66,14 @@ func String() string {
 	}
 
 	return version
+}
+
+func Details() string {
+	return fmt.Sprintf("llama.go version %v (llamacpp %v)", String(), LlamaCppVersion())
+}
+
+func LlamaCppVersion() string {
+	return wrapper.LLamaCppBulidInfo()
 }
 
 // normalizeSemString returns the passed string stripped of all characters

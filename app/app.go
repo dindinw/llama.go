@@ -11,14 +11,14 @@ import (
 
 func Run() error {
 	app := &cli.App{
-		Name:    "",
+		Name:    "llama.go",
 		Version: version.String(),
 		Authors: []*cli.Author{
 			&cli.Author{
 				Name: "Qitmeer",
 			},
 		},
-		Copyright:            "(c) 2025 Qitmeer",
+		Copyright:            "(c) 2026 Qitmeer",
 		Usage:                "Llama",
 		Flags:                config.AppFlags,
 		EnableBashCompletion: true,

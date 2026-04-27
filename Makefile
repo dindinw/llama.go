@@ -18,6 +18,8 @@ else
 	@powershell -ExecutionPolicy Bypass -File ./scripts/build_windows.ps1
 endif
 
+clean-bin:
+	$(RM) $(BUILD_DIR)/bin
 clean:
 	@echo "Cleaning $(BUILD_DIR) directory"
 ifeq ($(OS), Linux)

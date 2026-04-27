@@ -70,6 +70,7 @@ include_directories(${SERVER_ASSETS_DIR})
 # core
 set(SRCS
     ${GENERATED_ASSETS}
+    src/build_info.cpp
     src/process_go_bridge_stub.cpp
     src/interactive.cpp
     src/process.cpp

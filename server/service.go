@@ -59,7 +59,7 @@ func (s *Service) Start() error {
 	if err != nil {
 		return err
 	}
-	log.Info(fmt.Sprintf("Listening on %s (version %s)", ln.Addr(), version.String()))
+	log.Info(fmt.Sprintf("Listening on %s (%s) ", ln.Addr(), version.Details()))
 	s.srvr = &http.Server{
 		Handler: nil,
 	}

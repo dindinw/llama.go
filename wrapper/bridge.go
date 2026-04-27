@@ -193,6 +193,11 @@ func GetCommonParams() CommonParams {
 	return CommonParams{EndpointProps: bool(ret.endpoint_props)}
 }
 
+func LLamaCppBulidInfo() string {
+	ret := C.get_llama_build_info()
+	return C.GoString(ret)
+}
+
 // IsLlamaRunning reports whether the llama_core inference loop is active (model loaded and serving).
 func IsLlamaRunning() bool {
 	return bool(C.llama_is_running())

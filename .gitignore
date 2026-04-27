@@ -12,3 +12,6 @@ core/build_*/
 
 # Claude Code configuration
 .claude/settings.local.json
+
+# local folder
+.local/

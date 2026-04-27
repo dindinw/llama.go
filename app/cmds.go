@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-
 	"github.com/Qitmeer/llama.go/api"
 	"github.com/Qitmeer/llama.go/app/embedding"
 	econfig "github.com/Qitmeer/llama.go/app/embedding/config"
@@ -60,7 +59,7 @@ func versionCmd() *cli.Command {
 		Usage:       "Show llama.go version",
 		Description: "Show llama.go version",
 		Action: func(ctx *cli.Context) error {
-			print(version.String())
+			println(version.Details())
 			return nil
 		},
 	}
