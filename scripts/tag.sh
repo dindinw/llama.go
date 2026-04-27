@@ -20,7 +20,7 @@ if git show-ref --tags --quiet "refs/tags/$tag"; then
   echo "  ✔ Local already has tag: $tag (skip fetch)"
 else
   echo "  → Fetching $tag from origin..."
-  git fetch origin $tag 
+  git fetch origin tag $tag
 fi
 
 # checkout $tag
