@@ -24,6 +24,7 @@ set(BUILD_SHARED_LIBS OFF)
 set(LLAMA_BUILD_COMMON ON)
 set(LLAMA_BUILD_TOOLS ON)
 set(LLAMA_CURL OFF)
+set(LLAMA_OPENSSL ON)
 add_subdirectory(llama.cpp ${CMAKE_BINARY_DIR}/llama)
 
 # whisper.cpp — reuse the ggml already built by llama.cpp

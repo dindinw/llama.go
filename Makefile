@@ -21,7 +21,7 @@ endif
 test:
 ifeq ($(OS), Linux)
 	@echo "Running test on Linux"
-	@echo "TODO ./scripts/test.sh"
+	@./scripts/test.sh
 else ifeq ($(OS), Darwin)
 	@echo "Running test on macOS"
 	@./scripts/test.sh

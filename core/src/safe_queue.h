@@ -1,6 +1,8 @@
 #pragma once
+#include <string>
 #include <queue>
 #include <mutex>
+#include <condition_variable>
 
 class SafeQueue {
 public:
