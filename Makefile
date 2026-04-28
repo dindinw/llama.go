@@ -18,6 +18,18 @@ else
 	@powershell -ExecutionPolicy Bypass -File ./scripts/build_windows.ps1
 endif
 
+test:
+ifeq ($(OS), Linux)
+	@echo "Running test on Linux"
+	@echo "TODO ./scripts/test.sh"
+else ifeq ($(OS), Darwin)
+	@echo "Running test on macOS"
+	@./scripts/test.sh
+else
+	@echo "Running test on Windows or Unknown OS"
+	@echo "TODO ./scripts/test.sh"
+endif
+
 clean-bin:
 	$(RM) $(BUILD_DIR)/bin
 clean:
